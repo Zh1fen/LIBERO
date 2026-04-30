@@ -6,6 +6,7 @@ from pathlib import Path
 import h5py
 import imageio.v2 as imageio
 import numpy as np
+from tqdm import tqdm
 
 
 def _to_serializable(value):
@@ -47,17 +48,20 @@ def _looks_like_image_batch(array):
     )
 
 
-def _save_image_batch(array, output_dir, fps):
+def _save_image_batch(array, output_dir, fps, save_frames):
     os.makedirs(output_dir, exist_ok=True)
     video_path = os.path.join(output_dir, "video.mp4")
     with imageio.get_writer(video_path, fps=fps) as writer:
-        for idx, frame in enumerate(array):
+        for idx, frame in enumerate(
+            tqdm(array, desc=f"frames:{Path(output_dir).name}", leave=False)
+        ):
             frame = _normalize_frame(frame)
-            imageio.imwrite(os.path.join(output_dir, f"{idx:05d}.png"), frame)
+            if save_frames:
+                imageio.imwrite(os.path.join(output_dir, f"{idx:05d}.png"), frame)
             writer.append_data(frame)
 
 
-def _unpack_dataset(name, dataset, output_dir, export_images, fps):
+def _unpack_dataset(name, dataset, output_dir, export_images, fps, save_frames):
     array = dataset[()]
     np.save(os.path.join(output_dir, f"{name}.npy"), array)
 
@@ -68,19 +72,23 @@ def _unpack_dataset(name, dataset, output_dir, export_images, fps):
     _write_json(os.path.join(output_dir, f"{name}.meta.json"), meta)
 
     if export_images and _looks_like_image_batch(array):
-        _save_image_batch(array, os.path.join(output_dir, f"{name}_frames"), fps)
+        _save_image_batch(
+            array, os.path.join(output_dir, f"{name}_frames"), fps, save_frames
+        )
 
 
-def _unpack_group(group, output_dir, export_images, fps):
+def _unpack_group(group, output_dir, export_images, fps, save_frames):
     os.makedirs(output_dir, exist_ok=True)
     _write_attrs(group.attrs, output_dir)
 
-    for key in group.keys():
+    for key in tqdm(list(group.keys()), desc=f"group:{Path(output_dir).name}", leave=False):
         item = group[key]
         if isinstance(item, h5py.Group):
-            _unpack_group(item, os.path.join(output_dir, key), export_images, fps)
+            _unpack_group(
+                item, os.path.join(output_dir, key), export_images, fps, save_frames
+            )
         elif isinstance(item, h5py.Dataset):
-            _unpack_dataset(key, item, output_dir, export_images, fps)
+            _unpack_dataset(key, item, output_dir, export_images, fps, save_frames)
 
 
 def _default_output_dir(dataset_path, output_root=None):
@@ -89,13 +97,15 @@ def _default_output_dir(dataset_path, output_root=None):
     return root / dataset_path.stem
 
 
-def _unpack_one_file(dataset_path, demo_key, output_root, export_images, fps):
+def _unpack_one_file(
+    dataset_path, demo_key, output_root, export_images, fps, save_frames
+):
     output_dir = _default_output_dir(dataset_path, output_root)
     output_dir.mkdir(parents=True, exist_ok=True)
 
     with h5py.File(dataset_path, "r") as f:
         if demo_key is None:
-            _unpack_group(f, str(output_dir), export_images, fps)
+            _unpack_group(f, str(output_dir), export_images, fps, save_frames)
         else:
             if "data" not in f or demo_key not in f["data"]:
                 raise ValueError(f"Demo key {demo_key} not found under data/")
@@ -104,6 +114,7 @@ def _unpack_one_file(dataset_path, demo_key, output_root, export_images, fps):
                 str(output_dir / demo_key),
                 export_images,
                 fps,
+                save_frames,
             )
             _write_attrs(f["data"].attrs, str(output_dir))
 
@@ -135,7 +146,12 @@ def main():
     parser.add_argument(
         "--no-images",
         action="store_true",
-        help="Do not export PNG frames and MP4 videos for image tensors.",
+        help="Do not export MP4 videos for image tensors.",
+    )
+    parser.add_argument(
+        "--save-frames",
+        action="store_true",
+        help="Also export PNG frames in addition to MP4 videos.",
     )
     args = parser.parse_args()
 
@@ -146,7 +162,12 @@ def main():
 
     if args.dataset:
         _unpack_one_file(
-            args.dataset, args.demo_key, args.output_root, export_images, args.fps
+            args.dataset,
+            args.demo_key,
+            args.output_root,
+            export_images,
+            args.fps,
+            args.save_frames,
         )
         return
 
@@ -155,13 +176,14 @@ def main():
     if not datasets:
         raise ValueError(f"No .hdf5 files found in {input_dir}")
 
-    for dataset_path in datasets:
+    for dataset_path in tqdm(datasets, desc="hdf5 files"):
         _unpack_one_file(
             str(dataset_path),
             args.demo_key,
             args.output_root,
             export_images,
             args.fps,
+            args.save_frames,
         )
 
 

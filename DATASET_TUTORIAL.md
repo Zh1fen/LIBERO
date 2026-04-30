@@ -22,24 +22,84 @@ python benchmark_scripts/download_libero_datasets.py \
 
 ## 2. 查看 `hdf5` 里有什么
 
-官方 `*_demo.hdf5` 已经是训练可用格式，不需要额外解码。若要查看内容，可先打印结构：
+官方 `*_demo.hdf5` 已经是训练可用格式，不需要额外解码。若要先看文件结构，可运行：
 
 ```bash
 python scripts/get_dataset_info.py \
   --dataset $DATA_ROOT/official/libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo.hdf5
 ```
 
-如果你想把一个目录里的所有 `hdf5` 都展开成普通文件目录：
+如果你想把一个目录里的所有 `hdf5` 都展开成普通文件目录，可运行：
 
 ```bash
 python scripts/unpack_hdf5_dataset.py \
   --input-dir $DATA_ROOT/official/libero_object
 ```
 
-输出内容通常包括：
+这个命令会对目录下每个 `*.hdf5` 单独解包，并把结果放在原文件旁边的同名目录里。运行时会显示文件级和视频写出进度条。例如：
+
+```text
+$DATA_ROOT/official/libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo.hdf5
+-> $DATA_ROOT/official/libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo/
+```
+
+如果你只想解一个文件：
+
+```bash
+python scripts/unpack_hdf5_dataset.py \
+  --dataset $DATA_ROOT/official/libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo.hdf5
+```
+
+如果你只想看其中一条轨迹，例如 `demo_0`：
+
+```bash
+python scripts/unpack_hdf5_dataset.py \
+  --dataset $DATA_ROOT/official/libero_object/pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo.hdf5 \
+  --demo-key demo_0
+```
+
+如果你不想导出视频，只保留 `json` 和 `npy`：
+
+```bash
+python scripts/unpack_hdf5_dataset.py \
+  --input-dir $DATA_ROOT/official/libero_object \
+  --no-images
+```
+
+如果你还想额外保留逐帧 `png`，显式加上：
+
+```bash
+python scripts/unpack_hdf5_dataset.py \
+  --input-dir $DATA_ROOT/official/libero_object \
+  --save-frames
+```
+
+解包后的内容通常包括：
 - `attrs.json`：任务和环境元数据
 - `*.npy`：动作、状态、奖励、图像张量
-- `*_frames/`：完整图像帧和对应 `video.mp4`
+- `*_frames/video.mp4`：由图像张量还原出的完整视频
+- `*_frames/*.png`：仅在使用 `--save-frames` 时导出
+
+一个典型目录结构如下：
+
+```text
+pick_up_the_alphabet_soup_and_place_it_in_the_basket_demo/
+  attrs.json
+  data/
+    attrs.json
+    demo_1/
+      attrs.json
+      actions.npy
+      actions.meta.json
+      states.npy
+      rewards.npy
+      dones.npy
+      obs/
+        agentview_rgb.npy
+        agentview_rgb.meta.json
+        agentview_rgb_frames/
+          video.mp4
+```
 
 ## 3. 本地生成数据
 
